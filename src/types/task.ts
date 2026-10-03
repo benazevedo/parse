@@ -12,6 +12,8 @@ export interface Task {
   priority: TaskPriority;
   today: boolean;
   now: boolean;
+  sourceProjectId?: string;
+  sourceProjectStepId?: string;
 }
 
 export interface TaskActionResult {

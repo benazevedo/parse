@@ -23,6 +23,26 @@ export default function RootLayout() {
               presentation: "modal",
             }}
           />
+          <Stack.Screen
+            name="project/new"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="project/[id]/index"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="project/[id]/parse"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
         </Stack>
       ) : (
         <View style={styles.loading}>
