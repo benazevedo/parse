@@ -12,8 +12,11 @@ export interface Task {
   priority: TaskPriority;
   today: boolean;
   now: boolean;
+  estimatedMinutes?: number;
   sourceProjectId?: string;
   sourceProjectStepId?: string;
+  sourceRoutineId?: string;
+  sourceRoutineDate?: string;
 }
 
 export interface TaskActionResult {

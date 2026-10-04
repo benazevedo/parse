@@ -11,6 +11,8 @@ interface TaskCardProps {
   onSetNow: () => void;
   onRemove: () => void;
   onChangePriority: (priority: TaskPriority) => void;
+  onPlan: () => void;
+  scheduledLabel?: string;
 }
 
 export function TaskCard({
@@ -19,6 +21,8 @@ export function TaskCard({
   onSetNow,
   onRemove,
   onChangePriority,
+  onPlan,
+  scheduledLabel,
 }: TaskCardProps) {
   return (
     <View style={[styles.card, task.now && styles.nowCard]}>
@@ -27,6 +31,19 @@ export function TaskCard({
         {task.now ? <Text style={styles.nowBadge}>NOW</Text> : null}
       </View>
       {task.notes ? <Text style={styles.notes}>{task.notes}</Text> : null}
+      <Pressable
+        onPress={onPlan}
+        style={({ pressed }) => [styles.planRow, pressed && styles.pressed]}
+      >
+        <Ionicons color={colors.muted} name="time-outline" size={16} />
+        <Text style={styles.planText}>
+          {scheduledLabel ??
+            (task.estimatedMinutes
+              ? `${task.estimatedMinutes} min estimated · Schedule`
+              : "Estimate & schedule")}
+        </Text>
+        <Ionicons color={colors.muted} name="chevron-forward" size={15} />
+      </Pressable>
       <PriorityPicker
         compact
         onSelect={onChangePriority}
@@ -109,6 +126,21 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: typography.size.body,
     lineHeight: 21,
+  },
+  planRow: {
+    alignItems: "center",
+    backgroundColor: colors.background,
+    borderRadius: radii.sm,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 38,
+    paddingHorizontal: spacing.md,
+  },
+  planText: {
+    color: colors.muted,
+    flex: 1,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.medium,
   },
   actions: {
     alignItems: "center",

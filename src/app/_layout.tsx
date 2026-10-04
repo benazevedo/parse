@@ -43,6 +43,48 @@ export default function RootLayout() {
               presentation: "modal",
             }}
           />
+          <Stack.Screen
+            name="planning/commitment"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="planning/task/[taskId]"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen name="week" options={{ headerShown: false }} />
+          <Stack.Screen name="rhythm/index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="rhythm/commitment/[id]"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="rhythm/routine/[id]"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="rhythm/occurrence/[id]"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
         </Stack>
       ) : (
         <View style={styles.loading}>

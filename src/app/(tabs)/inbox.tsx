@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { router, type Href } from "expo-router";
 import { useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -104,6 +105,29 @@ export default function InboxScreen() {
                       />
                       <Text style={styles.completeText}>Complete</Text>
                     </Pressable>
+                    <Pressable
+                      onPress={() =>
+                        router.push({
+                          pathname: "/planning/task/[taskId]",
+                          params: { taskId: task.id },
+                        } as unknown as Href)
+                      }
+                      style={({ pressed }) => [
+                        styles.estimateButton,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Ionicons
+                        color={colors.accent}
+                        name="time-outline"
+                        size={17}
+                      />
+                      <Text style={styles.estimateText}>
+                        {task.estimatedMinutes
+                          ? `${task.estimatedMinutes} min`
+                          : "Estimate"}
+                      </Text>
+                    </Pressable>
                   </View>
                 )}
               </View>
@@ -171,6 +195,17 @@ const styles = StyleSheet.create({
   },
   completeText: {
     color: colors.success,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.semibold,
+  },
+  estimateButton: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 42,
+  },
+  estimateText: {
+    color: colors.accent,
     fontSize: typography.size.caption,
     fontWeight: typography.weight.semibold,
   },
