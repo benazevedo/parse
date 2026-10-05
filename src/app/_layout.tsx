@@ -24,6 +24,22 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="triage/[id]"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
+          <Stack.Screen
+            name="knowledge/index"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
+            name="knowledge/[id]"
+            options={{ headerShown: false }}
+          />
+          <Stack.Screen
             name="project/new"
             options={{
               animation: "slide_from_bottom",

@@ -13,6 +13,7 @@ export interface Project {
   domain?: string;
   nextActionId?: string;
   activeSlotId?: string;
+  sourceCaptureId?: string;
 }
 
 export interface ProjectStep {

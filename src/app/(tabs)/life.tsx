@@ -87,16 +87,28 @@ export default function LifeScreen() {
       </View>
       <Text style={styles.sectionLabel}>LIFE DOMAINS</Text>
       <View style={styles.grid}>
-        {domains.map((domain) => (
-          <View key={domain.name} style={styles.card}>
-            <View style={styles.iconWrap}>
-              <Ionicons color={colors.accent} name={domain.icon} size={22} />
-            </View>
-            <Text style={styles.title}>{domain.name}</Text>
-            <Text style={styles.description}>{domain.description}</Text>
-            <Text style={styles.soon}>PLANNED</Text>
-          </View>
-        ))}
+        {domains.map((domain) => {
+          const isKnowledge = domain.name === "Knowledge";
+          const Card = isKnowledge ? Pressable : View;
+          return (
+            <Card
+              key={domain.name}
+              {...(isKnowledge
+                ? { onPress: () => router.push("/knowledge" as Href) }
+                : {})}
+              style={styles.card}
+            >
+              <View style={styles.iconWrap}>
+                <Ionicons color={colors.accent} name={domain.icon} size={22} />
+              </View>
+              <Text style={styles.title}>{domain.name}</Text>
+              <Text style={styles.description}>{domain.description}</Text>
+              <Text style={styles.soon}>
+                {isKnowledge ? "OPEN" : "PLANNED"}
+              </Text>
+            </Card>
+          );
+        })}
       </View>
     </Screen>
   );

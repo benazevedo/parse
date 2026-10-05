@@ -3,6 +3,17 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
+  archiveCaptureItem,
+  createCaptureItem,
+  processCaptureAsKnowledge,
+  processCaptureAsProject,
+  processCaptureAsTask,
+  restoreArchivedCaptureItem,
+  setKnowledgeItemArchived,
+  undoCaptureProcessing,
+  updateKnowledgeItem,
+} from "@/store/capture-transitions";
+import {
   completeWeeklyReview,
   createProjectWithFocus,
   parkAndActivateProject,
@@ -40,6 +51,16 @@ import {
   type FocusActionResult,
   type WeeklyReview,
 } from "@/types/focus";
+import type {
+  CaptureActionResult,
+  CaptureInput,
+  CaptureItem,
+  KnowledgeItem,
+  ProcessCaptureKnowledgeInput,
+  ProcessCaptureProjectInput,
+  ProcessCaptureTaskInput,
+  UpdateKnowledgeInput,
+} from "@/types/capture";
 import {
   addRoutineOccurrenceToTodayTransition,
   clearOccurrenceOverrideTransition,
@@ -63,12 +84,7 @@ import type {
   PlanningActionResult,
   TaskScheduleInput,
 } from "@/types/planning";
-import type {
-  CaptureTaskInput,
-  Task,
-  TaskActionResult,
-  TaskPriority,
-} from "@/types/task";
+import type { Task, TaskActionResult, TaskPriority } from "@/types/task";
 import type {
   RecurrenceActionResult,
   RecurrenceRule,
@@ -94,9 +110,35 @@ interface TaskStore {
   routineStates: RoutineOccurrenceState[];
   activeSlots: ActiveSlot[];
   weeklyReviews: WeeklyReview[];
+  captureItems: CaptureItem[];
+  knowledgeItems: KnowledgeItem[];
   hasHydrated: boolean;
   setHasHydrated: (hasHydrated: boolean) => void;
-  captureTask: (input: CaptureTaskInput) => Task | null;
+  captureThought: (input: CaptureInput) => CaptureActionResult;
+  processCaptureAsTask: (
+    captureItemId: string,
+    input: ProcessCaptureTaskInput,
+  ) => CaptureActionResult;
+  processCaptureAsProject: (
+    captureItemId: string,
+    input: ProcessCaptureProjectInput,
+    projectIdsToPark?: string[],
+  ) => CaptureActionResult;
+  processCaptureAsKnowledge: (
+    captureItemId: string,
+    input: ProcessCaptureKnowledgeInput,
+  ) => CaptureActionResult;
+  archiveCapture: (captureItemId: string) => CaptureActionResult;
+  restoreArchivedCapture: (captureItemId: string) => CaptureActionResult;
+  undoCaptureProcessing: (captureItemId: string) => CaptureActionResult;
+  updateKnowledgeItem: (
+    knowledgeItemId: string,
+    input: UpdateKnowledgeInput,
+  ) => CaptureActionResult;
+  setKnowledgeArchived: (
+    knowledgeItemId: string,
+    archived: boolean,
+  ) => CaptureActionResult;
   addToToday: (taskId: string, priority: TaskPriority) => TaskActionResult;
   setNow: (taskId: string) => TaskActionResult;
   completeTask: (taskId: string) => TaskActionResult;
@@ -228,6 +270,17 @@ function focusData(state: TaskStore) {
   };
 }
 
+function captureData(state: TaskStore) {
+  return {
+    captureItems: state.captureItems,
+    knowledgeItems: state.knowledgeItems,
+    tasks: state.tasks,
+    projects: state.projects,
+    activeSlots: state.activeSlots,
+    weeklyReviews: state.weeklyReviews,
+  };
+}
+
 export const useTaskStore = create<TaskStore>()(
   persist(
     (set, get) => ({
@@ -242,29 +295,126 @@ export const useTaskStore = create<TaskStore>()(
       routineStates: [],
       activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
       weeklyReviews: [],
+      captureItems: [],
+      knowledgeItems: [],
       hasHydrated: false,
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
-      captureTask: ({ title, notes }) => {
-        const cleanTitle = title.trim();
-        const cleanNotes = notes?.trim();
-
-        if (!cleanTitle) {
-          return null;
+      captureThought: (input) => {
+        const transition = createCaptureItem(
+          captureData(get()),
+          input,
+          createId("capture"),
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ captureItems: transition.captureItems });
+        return transition;
+      },
+      processCaptureAsTask: (captureItemId, input) => {
+        const transition = processCaptureAsTask(
+          captureData(get()),
+          captureItemId,
+          input,
+          createId("task"),
+          new Date().toISOString(),
+        );
+        if (transition.ok) {
+          set({
+            captureItems: transition.captureItems,
+            tasks: transition.tasks,
+          });
         }
-
-        const task: Task = {
-          id: createId("task"),
-          title: cleanTitle,
-          notes: cleanNotes || undefined,
-          createdAt: new Date().toISOString(),
-          status: "inbox",
-          priority: "should",
-          today: false,
-          now: false,
-        };
-
-        set((state) => ({ tasks: [task, ...state.tasks] }));
-        return task;
+        return transition;
+      },
+      processCaptureAsProject: (
+        captureItemId,
+        input,
+        projectIdsToPark = [],
+      ) => {
+        const transition = processCaptureAsProject(
+          captureData(get()),
+          captureItemId,
+          input,
+          createId("project"),
+          new Date().toISOString(),
+          projectIdsToPark,
+        );
+        if (transition.ok) {
+          set({
+            captureItems: transition.captureItems,
+            projects: transition.projects,
+            activeSlots: transition.activeSlots,
+            weeklyReviews: transition.weeklyReviews,
+          });
+        }
+        return transition;
+      },
+      processCaptureAsKnowledge: (captureItemId, input) => {
+        const transition = processCaptureAsKnowledge(
+          captureData(get()),
+          captureItemId,
+          input,
+          createId("knowledge"),
+          new Date().toISOString(),
+        );
+        if (transition.ok) {
+          set({
+            captureItems: transition.captureItems,
+            knowledgeItems: transition.knowledgeItems,
+          });
+        }
+        return transition;
+      },
+      archiveCapture: (captureItemId) => {
+        const transition = archiveCaptureItem(
+          captureData(get()),
+          captureItemId,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ captureItems: transition.captureItems });
+        return transition;
+      },
+      restoreArchivedCapture: (captureItemId) => {
+        const transition = restoreArchivedCaptureItem(
+          captureData(get()),
+          captureItemId,
+        );
+        if (transition.ok) set({ captureItems: transition.captureItems });
+        return transition;
+      },
+      undoCaptureProcessing: (captureItemId) => {
+        const transition = undoCaptureProcessing(
+          captureData(get()),
+          captureItemId,
+        );
+        if (transition.ok) {
+          set({
+            captureItems: transition.captureItems,
+            knowledgeItems: transition.knowledgeItems,
+            tasks: transition.tasks,
+            projects: transition.projects,
+          });
+        }
+        return transition;
+      },
+      updateKnowledgeItem: (knowledgeItemId, input) => {
+        const transition = updateKnowledgeItem(
+          get().knowledgeItems,
+          knowledgeItemId,
+          input,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ knowledgeItems: transition.knowledgeItems });
+        return transition;
+      },
+      setKnowledgeArchived: (knowledgeItemId, archived) => {
+        const transition = setKnowledgeItemArchived(
+          get().knowledgeItems,
+          knowledgeItemId,
+          archived,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ knowledgeItems: transition.knowledgeItems });
+        return transition;
       },
       addToToday: (taskId, priority) => {
         const transition = addTaskToToday(get().tasks, taskId, priority);
@@ -607,7 +757,7 @@ export const useTaskStore = create<TaskStore>()(
     {
       name: "parse-tasks-v1",
       storage: createJSONStorage(() => AsyncStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState) => migratePersistedState(persistedState),
       partialize: ({
         tasks,
@@ -621,6 +771,8 @@ export const useTaskStore = create<TaskStore>()(
         routineStates,
         activeSlots,
         weeklyReviews,
+        captureItems,
+        knowledgeItems,
       }) => ({
         tasks,
         projects,
@@ -633,6 +785,8 @@ export const useTaskStore = create<TaskStore>()(
         routineStates,
         activeSlots,
         weeklyReviews,
+        captureItems,
+        knowledgeItems,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

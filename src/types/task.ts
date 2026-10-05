@@ -17,14 +17,10 @@ export interface Task {
   sourceProjectStepId?: string;
   sourceRoutineId?: string;
   sourceRoutineDate?: string;
+  sourceCaptureId?: string;
 }
 
 export interface TaskActionResult {
   ok: boolean;
   message?: string;
-}
-
-export interface CaptureTaskInput {
-  title: string;
-  notes?: string;
 }

@@ -73,6 +73,17 @@ const {
   startWeeklyReview,
 } = require("../src/store/focus-transitions.ts");
 const { DEFAULT_ACTIVE_SLOTS } = require("../src/types/focus.ts");
+const {
+  archiveCaptureItem,
+  createCaptureItem,
+  processCaptureAsKnowledge,
+  processCaptureAsProject,
+  processCaptureAsTask,
+  restoreArchivedCaptureItem,
+  setKnowledgeItemArchived,
+  undoCaptureProcessing,
+} = require("../src/store/capture-transitions.ts");
+const { searchKnowledgeItems } = require("../src/utils/knowledge.ts");
 
 const timestamp = "2026-10-03T12:00:00.000Z";
 const completedAt = "2026-10-03T13:00:00.000Z";
@@ -1511,6 +1522,328 @@ assert.equal(
   "restart preserves slot capacity state",
 );
 
+// Milestone 006: raw capture, explicit triage, traceability, and Knowledge.
+let captureState = {
+  captureItems: [],
+  knowledgeItems: [],
+  tasks: [],
+  projects: [],
+  activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
+  weeklyReviews: [],
+};
+
+const blankCapture = createCaptureItem(
+  captureState,
+  { content: "   " },
+  "capture-blank",
+  timestamp,
+);
+assert.equal(blankCapture.ok, false, "blank CaptureItems are rejected");
+
+let captureResult = createCaptureItem(
+  captureState,
+  { content: "Renew home insurance" },
+  "capture-insurance",
+  timestamp,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(captureState.tasks.length, 0, "Capture does not create a Task");
+assert.equal(captureState.captureItems[0].status, "inbox");
+
+captureResult = processCaptureAsTask(
+  captureState,
+  "capture-insurance",
+  {
+    title: "Renew home insurance",
+    priority: "must",
+    addToToday: true,
+    estimatedMinutes: 30,
+  },
+  "task-insurance",
+  completedAt,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(captureState.tasks[0].today, true);
+assert.equal(captureState.tasks[0].sourceCaptureId, "capture-insurance");
+assert.equal(captureState.captureItems[0].outcomeId, "task-insurance");
+
+const duplicateProcess = processCaptureAsTask(
+  captureState,
+  "capture-insurance",
+  {
+    title: "Renew home insurance again",
+    priority: "should",
+    addToToday: false,
+  },
+  "duplicate-insurance",
+  completedAt,
+);
+assert.equal(duplicateProcess.ok, false);
+assert.equal(
+  duplicateProcess.tasks.length,
+  1,
+  "a capture has one primary outcome",
+);
+
+captureResult = createCaptureItem(
+  captureState,
+  { content: "Plan Costa Rica trip" },
+  "capture-trip",
+  timestamp,
+);
+captureState = captureResult;
+captureResult = processCaptureAsProject(
+  captureState,
+  "capture-trip",
+  {
+    title: "Plan Costa Rica trip",
+    desiredOutcome: "A booked and prepared family trip",
+    status: "parked",
+  },
+  "project-trip",
+  completedAt,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(captureState.projects[0].status, "parked");
+assert.equal(captureState.projects[0].sourceCaptureId, "capture-trip");
+assert.equal(captureState.projects[0].activeSlotId, undefined);
+
+const buildSlot = captureState.activeSlots.find(
+  (slot) => slot.id === "slot-build",
+);
+captureState = {
+  ...captureState,
+  projects: [
+    {
+      id: "project-in-slot",
+      title: "Existing build",
+      desiredOutcome: "Existing build ships",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      status: "active",
+      activeSlotId: buildSlot.id,
+    },
+    ...captureState.projects,
+  ],
+};
+captureResult = createCaptureItem(
+  captureState,
+  { content: "Start another build" },
+  "capture-active-project",
+  timestamp,
+);
+captureState = captureResult;
+const blockedCaptureProject = processCaptureAsProject(
+  captureState,
+  "capture-active-project",
+  {
+    title: "Another build",
+    desiredOutcome: "Another build ships",
+    status: "active",
+    activeSlotId: buildSlot.id,
+  },
+  "project-active-capture",
+  completedAt,
+);
+assert.equal(blockedCaptureProject.ok, false);
+assert.deepEqual(blockedCaptureProject.conflictingProjectIds, [
+  "project-in-slot",
+]);
+assert.equal(
+  blockedCaptureProject.captureItems.find(
+    (item) => item.id === "capture-active-project",
+  ).status,
+  "inbox",
+  "failed slot activation leaves the CaptureItem unprocessed",
+);
+captureResult = processCaptureAsProject(
+  captureState,
+  "capture-active-project",
+  {
+    title: "Another build",
+    desiredOutcome: "Another build ships",
+    status: "active",
+    activeSlotId: buildSlot.id,
+  },
+  "project-active-capture",
+  completedAt,
+  ["project-in-slot"],
+);
+assert.equal(
+  captureResult.ok,
+  true,
+  "existing park-and-activate flow resolves capture conflict",
+);
+captureState = captureResult;
+assert.equal(
+  captureState.projects.find((item) => item.id === "project-in-slot").status,
+  "parked",
+);
+assert.equal(
+  captureState.projects.find((item) => item.id === "project-active-capture")
+    .activeSlotId,
+  buildSlot.id,
+);
+
+captureResult = createCaptureItem(
+  captureState,
+  { content: "Orange grove paint palette", notes: "Warm afternoon colors" },
+  "capture-orange",
+  timestamp,
+);
+captureState = captureResult;
+captureResult = processCaptureAsKnowledge(
+  captureState,
+  "capture-orange",
+  {
+    title: "Citrus color inspiration",
+    kind: "inspiration",
+    domain: "home",
+    disposition: "reference",
+  },
+  "knowledge-orange",
+  completedAt,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(captureState.knowledgeItems[0].sourceCaptureId, "capture-orange");
+assert.equal(captureState.knowledgeItems[0].kind, "inspiration");
+assert.equal(captureState.knowledgeItems[0].domain, "home");
+assert.equal(
+  searchKnowledgeItems(captureState.knowledgeItems, "ORANGE").length,
+  1,
+);
+assert.equal(
+  searchKnowledgeItems(captureState.knowledgeItems, "afternoon").length,
+  1,
+);
+
+captureResult = createCaptureItem(
+  captureState,
+  { content: "Learn pottery someday" },
+  "capture-pottery",
+  timestamp,
+);
+captureState = captureResult;
+const beforeSomedayTasks = captureState.tasks.length;
+const beforeSomedayProjects = captureState.projects.length;
+captureResult = processCaptureAsKnowledge(
+  captureState,
+  "capture-pottery",
+  {
+    title: "Learn pottery",
+    kind: "idea",
+    domain: "creative",
+    disposition: "someday",
+  },
+  "knowledge-pottery",
+  completedAt,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(captureState.knowledgeItems[0].disposition, "someday");
+assert.equal(
+  captureState.tasks.length,
+  beforeSomedayTasks,
+  "Someday adds no Task",
+);
+assert.equal(
+  captureState.projects.length,
+  beforeSomedayProjects,
+  "Someday uses no focus slot",
+);
+
+captureResult = createCaptureItem(
+  captureState,
+  { content: "Temporary archived thought" },
+  "capture-archive",
+  timestamp,
+);
+captureState = captureResult;
+captureResult = archiveCaptureItem(
+  captureState,
+  "capture-archive",
+  completedAt,
+);
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(
+  captureState.captureItems.find((item) => item.id === "capture-archive")
+    .status,
+  "archived",
+);
+captureResult = restoreArchivedCaptureItem(captureState, "capture-archive");
+assert.equal(captureResult.ok, true);
+captureState = captureResult;
+assert.equal(
+  captureState.captureItems.find((item) => item.id === "capture-archive")
+    .status,
+  "inbox",
+);
+
+let archivedKnowledge = setKnowledgeItemArchived(
+  captureState.knowledgeItems,
+  "knowledge-orange",
+  true,
+  completedAt,
+);
+assert.equal(archivedKnowledge.ok, true);
+assert.equal(
+  archivedKnowledge.knowledgeItems.find(
+    (item) => item.id === "knowledge-orange",
+  ).archivedAt,
+  completedAt,
+);
+archivedKnowledge = setKnowledgeItemArchived(
+  archivedKnowledge.knowledgeItems,
+  "knowledge-orange",
+  false,
+  completedAt,
+);
+assert.equal(archivedKnowledge.ok, true);
+captureState = {
+  ...captureState,
+  knowledgeItems: archivedKnowledge.knowledgeItems,
+};
+
+const undoneCapture = undoCaptureProcessing(captureState, "capture-pottery");
+assert.equal(undoneCapture.ok, true);
+assert.equal(
+  undoneCapture.captureItems.find((item) => item.id === "capture-pottery")
+    .status,
+  "inbox",
+);
+assert.equal(
+  undoneCapture.knowledgeItems.some((item) => item.id === "knowledge-pottery"),
+  false,
+);
+captureState = undoneCapture;
+
+const restartedCapture = migratePersistedState(
+  JSON.parse(
+    JSON.stringify({
+      ...restartedFocus,
+      tasks: captureState.tasks,
+      projects: captureState.projects,
+      captureItems: captureState.captureItems,
+      knowledgeItems: captureState.knowledgeItems,
+    }),
+  ),
+);
+assert.equal(restartedCapture.captureItems.length, 6);
+assert.equal(restartedCapture.knowledgeItems.length, 1);
+assert.equal(restartedCapture.tasks[0].sourceCaptureId, "capture-insurance");
+assert.equal(
+  restartedCapture.projects.find((item) => item.id === "project-trip")
+    .sourceCaptureId,
+  "capture-trip",
+);
+assert.deepEqual(migratePersistedState({ tasks: [] }).captureItems, []);
+assert.deepEqual(migratePersistedState({ tasks: [] }).knowledgeItems, []);
+
 console.log(
-  "PASS M1-M5 project/task, planning, recurrence, active-slot, weekly-review, local-date, and persistence invariants",
+  "PASS M1-M6 project/task, planning, recurrence, focus, capture, knowledge, search, and persistence invariants",
 );

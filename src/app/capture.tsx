@@ -1,6 +1,6 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -18,29 +18,19 @@ import { useTaskStore } from "@/store/task-store";
 import { colors, radii, spacing, typography } from "@/theme/tokens";
 
 export default function CaptureScreen() {
-  const captureTask = useTaskStore((state) => state.captureTask);
-  const [title, setTitle] = useState("");
+  const captureThought = useTaskStore((state) => state.captureThought);
+  const [content, setContent] = useState("");
   const [notes, setNotes] = useState("");
-  const [saved, setSaved] = useState(false);
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const canSave = title.trim().length > 0 && !saved;
-
-  useEffect(
-    () => () => {
-      if (dismissTimer.current) clearTimeout(dismissTimer.current);
-    },
-    [],
-  );
+  const canSave = content.trim().length > 0;
 
   const save = () => {
     if (!canSave) return;
 
-    const task = captureTask({ title, notes });
-    if (!task) return;
+    const result = captureThought({ content, notes, source: "typed" });
+    if (!result.ok) return;
 
     Keyboard.dismiss();
-    setSaved(true);
-    dismissTimer.current = setTimeout(() => router.back(), 450);
+    router.back();
   };
 
   return (
@@ -52,7 +42,6 @@ export default function CaptureScreen() {
         <View style={styles.header}>
           <Pressable
             accessibilityRole="button"
-            disabled={saved}
             hitSlop={10}
             onPress={() => router.back()}
             style={({ pressed }) => [
@@ -82,19 +71,18 @@ export default function CaptureScreen() {
             Organize it later. Just get it out.
           </Text>
 
-          <Text style={styles.label}>Title</Text>
+          <Text style={styles.label}>Thought</Text>
           <TextInput
             autoCapitalize="sentences"
             autoCorrect
             autoFocus
-            editable={!saved}
-            onChangeText={setTitle}
-            onSubmitEditing={save}
-            placeholder="A clear task or thought"
+            multiline
+            onChangeText={setContent}
+            placeholder="Look into solar battery backup for house"
             placeholderTextColor={colors.disabled}
-            returnKeyType="next"
             style={styles.titleInput}
-            value={title}
+            textAlignVertical="top"
+            value={content}
           />
 
           <Text style={styles.label}>
@@ -103,7 +91,6 @@ export default function CaptureScreen() {
           <TextInput
             autoCapitalize="sentences"
             autoCorrect
-            editable={!saved}
             multiline
             onChangeText={setNotes}
             placeholder="Anything useful to remember"
@@ -126,13 +113,13 @@ export default function CaptureScreen() {
           >
             <Ionicons
               color={canSave ? colors.surface : colors.muted}
-              name={saved ? "checkmark" : "arrow-forward"}
+              name="arrow-forward"
               size={20}
             />
             <Text
               style={[styles.saveText, !canSave && styles.saveTextDisabled]}
             >
-              {saved ? "Captured to Inbox" : "Save to Inbox"}
+              Save to Inbox
             </Text>
           </Pressable>
         </ScrollView>
@@ -225,8 +212,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     color: colors.ink,
     fontSize: typography.size.bodyLarge,
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
+    lineHeight: 24,
+    minHeight: 112,
+    padding: spacing.lg,
   },
   notesInput: {
     backgroundColor: colors.surface,

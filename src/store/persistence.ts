@@ -1,6 +1,7 @@
 import type { Project, ProjectStep } from "../types/project";
 import type { DayPlan } from "../types/planning";
 import type { Task } from "../types/task";
+import type { CaptureItem, KnowledgeItem } from "../types/capture";
 import {
   DEFAULT_ACTIVE_SLOTS,
   type ActiveSlot,
@@ -26,6 +27,8 @@ export interface PersistedAppState {
   routineStates: RoutineOccurrenceState[];
   activeSlots: ActiveSlot[];
   weeklyReviews: WeeklyReview[];
+  captureItems: CaptureItem[];
+  knowledgeItems: KnowledgeItem[];
 }
 
 function defaultActiveSlots(): ActiveSlot[] {
@@ -52,6 +55,8 @@ export function migratePersistedState(
       routineStates: [],
       activeSlots: defaultActiveSlots(),
       weeklyReviews: [],
+      captureItems: [],
+      knowledgeItems: [],
     };
   }
 
@@ -101,6 +106,12 @@ export function migratePersistedState(
         : defaultActiveSlots(),
     weeklyReviews: Array.isArray(persistedState.weeklyReviews)
       ? (persistedState.weeklyReviews as WeeklyReview[])
+      : [],
+    captureItems: Array.isArray(persistedState.captureItems)
+      ? (persistedState.captureItems as CaptureItem[])
+      : [],
+    knowledgeItems: Array.isArray(persistedState.knowledgeItems)
+      ? (persistedState.knowledgeItems as KnowledgeItem[])
       : [],
   };
 }
