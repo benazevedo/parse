@@ -382,9 +382,14 @@ export default function TodayScreen() {
   );
   const routines = useTaskStore((state) => state.routines);
   const routineStates = useTaskStore((state) => state.routineStates);
+  const projects = useTaskStore((state) => state.projects);
+  const activeSlots = useTaskStore((state) => state.activeSlots);
   const completeTask = useTaskStore((state) => state.completeTask);
   const [clock, setClock] = useState(() => new Date());
   const date = getLocalDateKey(clock);
+  const focusProjects = projects.filter(
+    (project) => project.status === "active" && project.activeSlotId,
+  );
 
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 60_000);
@@ -455,7 +460,13 @@ export default function TodayScreen() {
         <Text style={styles.sectionLabel}>NOW</Text>
         <Text style={styles.sectionHint}>One chosen action</Text>
       </View>
-      <View style={[styles.nowCard, !nowTask && styles.nowCardEmpty]}>
+      <View
+        style={[
+          styles.nowCard,
+          !nowTask && styles.nowCardEmpty,
+          focusProjects.length > 0 && styles.nowCardWithFocus,
+        ]}
+      >
         {nowTask ? (
           <>
             <View style={styles.nowIcon}>
@@ -502,6 +513,39 @@ export default function TodayScreen() {
           </>
         )}
       </View>
+
+      {focusProjects.length ? (
+        <Pressable
+          onPress={() => router.push("/review" as Href)}
+          style={({ pressed }) => [
+            styles.focusSummary,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <View style={styles.focusHeading}>
+            <Text style={styles.sectionLabel}>THIS WEEK&apos;S FOCUS</Text>
+            <Text style={styles.focusReview}>Review →</Text>
+          </View>
+          {activeSlots
+            .filter((slot) => slot.enabled)
+            .sort((a, b) => a.order - b.order)
+            .flatMap((slot) =>
+              focusProjects
+                .filter((project) => project.activeSlotId === slot.id)
+                .map((project) => (
+                  <Text
+                    key={project.id}
+                    numberOfLines={1}
+                    style={styles.focusLine}
+                  >
+                    <Text style={styles.focusSlot}>{slot.name}</Text>
+                    {"  "}
+                    {project.title}
+                  </Text>
+                )),
+            )}
+        </Pressable>
+      ) : null}
 
       <View style={styles.timelineHeading}>
         <View>
@@ -748,6 +792,37 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  nowCardWithFocus: { marginBottom: spacing.lg },
+  focusSummary: {
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.xxxl,
+    padding: spacing.lg,
+  },
+  focusHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  focusReview: {
+    color: colors.accent,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.semibold,
+  },
+  focusLine: {
+    color: colors.text,
+    fontSize: typography.size.body,
+    lineHeight: 25,
+  },
+  focusSlot: {
+    color: colors.muted,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.bold,
+    textTransform: "uppercase",
   },
   nowIcon: {
     alignItems: "center",

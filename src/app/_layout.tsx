@@ -60,6 +60,15 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="week" options={{ headerShown: false }} />
+          <Stack.Screen name="review/index" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="focus/slots"
+            options={{
+              animation: "slide_from_bottom",
+              headerShown: false,
+              presentation: "modal",
+            }}
+          />
           <Stack.Screen name="rhythm/index" options={{ headerShown: false }} />
           <Stack.Screen
             name="rhythm/commitment/[id]"

@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { router } from "expo-router";
+import { router, type Href } from "expo-router";
 import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -11,19 +11,35 @@ import { useTaskStore } from "@/store/task-store";
 import { colors, radii, spacing, typography } from "@/theme/tokens";
 import type { Project, ProjectStatus } from "@/types/project";
 
-interface ProjectSectionProps {
-  label: string;
-  projects: Project[];
-  emptyMessage: string;
+function openProject(id: string) {
+  router.push({ pathname: "/project/[id]", params: { id } });
 }
 
-function ProjectSection({
+function ProjectList({ projects }: { projects: Project[] }) {
+  const steps = useTaskStore((state) => state.projectSteps);
+  return (
+    <View style={styles.list}>
+      {projects.map((project) => (
+        <ProjectCard
+          key={project.id}
+          onPress={() => openProject(project.id)}
+          project={project}
+          steps={steps.filter((step) => step.projectId === project.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+function SecondarySection({
   label,
   projects,
   emptyMessage,
-}: ProjectSectionProps) {
-  const allSteps = useTaskStore((state) => state.projectSteps);
-
+}: {
+  label: string;
+  projects: Project[];
+  emptyMessage: string;
+}) {
   return (
     <View style={styles.section}>
       <View style={styles.sectionHeading}>
@@ -31,21 +47,7 @@ function ProjectSection({
         <Text style={styles.count}>{projects.length}</Text>
       </View>
       {projects.length ? (
-        <View style={styles.list}>
-          {projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              onPress={() =>
-                router.push({
-                  pathname: "/project/[id]",
-                  params: { id: project.id },
-                })
-              }
-              project={project}
-              steps={allSteps.filter((step) => step.projectId === project.id)}
-            />
-          ))}
-        </View>
+        <ProjectList projects={projects} />
       ) : (
         <Text style={styles.emptySection}>{emptyMessage}</Text>
       )}
@@ -53,42 +55,53 @@ function ProjectSection({
   );
 }
 
-const sectionDetails: {
-  status: Exclude<ProjectStatus, "completed">;
+const secondary: {
+  status: Exclude<ProjectStatus, "active" | "completed">;
   label: string;
-  emptyMessage: string;
+  empty: string;
 }[] = [
-  {
-    status: "active",
-    label: "ACTIVE",
-    emptyMessage: "No active outcomes yet.",
-  },
-  {
-    status: "parked",
-    label: "PARKED",
-    emptyMessage: "Nothing is intentionally paused.",
-  },
+  { status: "parked", label: "PARKED", empty: "Not now, not never." },
   {
     status: "someday",
     label: "SOMEDAY",
-    emptyMessage: "Future possibilities can rest here.",
+    empty: "Future possibilities can rest here.",
   },
 ];
 
 export default function ProjectsScreen() {
   const projects = useTaskStore((state) => state.projects);
-  const projectSteps = useTaskStore((state) => state.projectSteps);
+  const slots = useTaskStore((state) => state.activeSlots);
   const [showCompleted, setShowCompleted] = useState(false);
+  const active = projects.filter((project) => project.status === "active");
   const completed = projects.filter(
     (project) => project.status === "completed",
   );
+  const unslotted = active.filter((project) => !project.activeSlotId);
 
   return (
     <Screen>
       <ScreenHeader
-        subtitle="Turn meaningful outcomes into one executable next action."
+        subtitle="Keep a few discretionary outcomes active. Everything else can wait."
         title="Projects"
       />
+
+      <View style={styles.utilityRow}>
+        <Pressable
+          onPress={() => router.push("/review" as Href)}
+          style={({ pressed }) => [styles.utility, pressed && styles.pressed]}
+        >
+          <Ionicons color={colors.accent} name="refresh-outline" size={18} />
+          <Text style={styles.utilityText}>Weekly Review</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => router.push("/focus/slots" as Href)}
+          style={({ pressed }) => [styles.utility, pressed && styles.pressed]}
+        >
+          <Ionicons color={colors.accent} name="options-outline" size={18} />
+          <Text style={styles.utilityText}>Slot settings</Text>
+        </Pressable>
+      </View>
+
       <Pressable
         onPress={() => router.push("/project/new")}
         style={({ pressed }) => [styles.newButton, pressed && styles.pressed]}
@@ -99,7 +112,7 @@ export default function ProjectsScreen() {
         <View style={styles.newCopy}>
           <Text style={styles.newTitle}>Create project</Text>
           <Text style={styles.newSubtitle}>
-            Name the outcome, then parse it down.
+            Name the outcome, then choose its place.
           </Text>
         </View>
         <Ionicons color={colors.accent} name="arrow-forward" size={18} />
@@ -108,14 +121,55 @@ export default function ProjectsScreen() {
       {projects.length === 0 ? (
         <EmptyState
           icon="layers-outline"
-          message="Start with an outcome that is too large to do in one sitting. PARSE will help you find the next action."
+          message="Start with an outcome that is too large to do in one sitting."
           title="What do you want to finish?"
         />
       ) : (
         <>
-          {sectionDetails.map((section) => (
-            <ProjectSection
-              emptyMessage={section.emptyMessage}
+          <View style={styles.activeHeading}>
+            <Text style={styles.activeLabel}>ACTIVE NOW</Text>
+            <Text style={styles.activeSupport}>
+              Your current discretionary focus
+            </Text>
+          </View>
+          {slots
+            .filter((slot) => slot.enabled)
+            .sort((a, b) => a.order - b.order)
+            .map((slot) => {
+              const occupants = active.filter(
+                (project) => project.activeSlotId === slot.id,
+              );
+              return (
+                <View key={slot.id} style={styles.slotCard}>
+                  <View style={styles.slotHeading}>
+                    <Text style={styles.slotName}>{slot.name}</Text>
+                    <Text style={styles.capacity}>
+                      {occupants.length}/{slot.maxActiveProjects}
+                    </Text>
+                  </View>
+                  {occupants.length ? (
+                    <ProjectList projects={occupants} />
+                  ) : (
+                    <Text style={styles.emptySlot}>
+                      Open for what matters next.
+                    </Text>
+                  )}
+                </View>
+              );
+            })}
+
+          {unslotted.length ? (
+            <SecondarySection
+              emptyMessage=""
+              label="OTHER ACTIVE"
+              projects={unslotted}
+            />
+          ) : null}
+
+          <View style={styles.secondaryDivider} />
+          {secondary.map((section) => (
+            <SecondarySection
+              emptyMessage={section.empty}
               key={section.status}
               label={section.label}
               projects={projects.filter(
@@ -140,25 +194,7 @@ export default function ProjectsScreen() {
                 size={16}
               />
             </Pressable>
-            {showCompleted ? (
-              <View style={styles.list}>
-                {completed.map((project) => (
-                  <ProjectCard
-                    key={project.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/project/[id]",
-                        params: { id: project.id },
-                      })
-                    }
-                    project={project}
-                    steps={projectSteps.filter(
-                      (step) => step.projectId === project.id,
-                    )}
-                  />
-                ))}
-              </View>
-            ) : null}
+            {showCompleted ? <ProjectList projects={completed} /> : null}
           </View>
         </>
       )}
@@ -167,6 +203,23 @@ export default function ProjectsScreen() {
 }
 
 const styles = StyleSheet.create({
+  utilityRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  utility: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingRight: spacing.md,
+  },
+  utilityText: {
+    color: colors.accent,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.semibold,
+  },
   newButton: {
     alignItems: "center",
     backgroundColor: colors.accentSoft,
@@ -195,6 +248,49 @@ const styles = StyleSheet.create({
     fontSize: typography.size.caption,
     marginTop: 3,
   },
+  activeHeading: { marginBottom: spacing.lg },
+  activeLabel: {
+    color: colors.accent,
+    fontSize: typography.size.caption,
+    fontWeight: typography.weight.bold,
+    letterSpacing: 1.6,
+  },
+  activeSupport: {
+    color: colors.muted,
+    fontSize: typography.size.caption,
+    marginTop: spacing.xs,
+  },
+  slotCard: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: radii.lg,
+    marginBottom: spacing.lg,
+    padding: spacing.lg,
+  },
+  slotHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.md,
+  },
+  slotName: {
+    color: colors.ink,
+    fontSize: typography.size.bodyLarge,
+    fontWeight: typography.weight.bold,
+  },
+  capacity: { color: colors.muted, fontSize: typography.size.caption },
+  emptySlot: {
+    color: colors.muted,
+    fontSize: typography.size.body,
+    fontStyle: "italic",
+    paddingVertical: spacing.md,
+  },
+  list: { gap: spacing.md },
+  secondaryDivider: {
+    backgroundColor: colors.border,
+    height: StyleSheet.hairlineWidth,
+    marginBottom: spacing.xxl,
+    marginTop: spacing.md,
+  },
   section: { marginBottom: spacing.xxl },
   sectionHeading: {
     alignItems: "center",
@@ -213,7 +309,6 @@ const styles = StyleSheet.create({
     fontSize: typography.size.caption,
     fontWeight: typography.weight.medium,
   },
-  list: { gap: spacing.md },
   emptySection: {
     color: colors.muted,
     fontSize: typography.size.body,

@@ -12,6 +12,7 @@ export interface Project {
   status: ProjectStatus;
   domain?: string;
   nextActionId?: string;
+  activeSlotId?: string;
 }
 
 export interface ProjectStep {
@@ -29,6 +30,7 @@ export interface CreateProjectInput {
   title: string;
   desiredOutcome: string;
   status?: Exclude<ProjectStatus, "completed">;
+  activeSlotId?: string;
 }
 
 export interface ProjectActionResult {

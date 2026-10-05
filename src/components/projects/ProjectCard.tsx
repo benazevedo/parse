@@ -43,7 +43,7 @@ export function ProjectCard({ project, steps, onPress }: ProjectCardProps) {
           </View>
         </View>
       ) : (
-        <Text style={styles.noNext}>No Next Action selected</Text>
+        <Text style={styles.noNext}>Needs a next action</Text>
       )}
       <Text style={styles.progress}>
         {steps.length === 0

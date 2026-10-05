@@ -3,6 +3,15 @@ import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
 import {
+  completeWeeklyReview,
+  createProjectWithFocus,
+  parkAndActivateProject,
+  saveActiveSlot,
+  setProjectFocus,
+  startWeeklyReview,
+} from "@/store/focus-transitions";
+
+import {
   addTaskToToday,
   returnTaskToInbox,
   selectNowTask,
@@ -24,8 +33,13 @@ import {
   completeTaskAndLinkedStep,
   designateNextAction,
   sendNextActionToToday,
-  updateProjectStatus,
 } from "@/store/project-transitions";
+import {
+  DEFAULT_ACTIVE_SLOTS,
+  type ActiveSlot,
+  type FocusActionResult,
+  type WeeklyReview,
+} from "@/types/focus";
 import {
   addRoutineOccurrenceToTodayTransition,
   clearOccurrenceOverrideTransition,
@@ -78,6 +92,8 @@ interface TaskStore {
   recurrenceOverrides: RecurringCommitmentOverride[];
   routines: Routine[];
   routineStates: RoutineOccurrenceState[];
+  activeSlots: ActiveSlot[];
+  weeklyReviews: WeeklyReview[];
   hasHydrated: boolean;
   setHasHydrated: (hasHydrated: boolean) => void;
   captureTask: (input: CaptureTaskInput) => Task | null;
@@ -136,7 +152,7 @@ interface TaskStore {
     date: string,
     priority: TaskPriority,
   ) => RecurrenceActionResult;
-  createProject: (input: CreateProjectInput) => Project | null;
+  createProject: (input: CreateProjectInput) => FocusActionResult;
   addProjectSteps: (
     projectId: string,
     parentStepId: string | undefined,
@@ -157,7 +173,16 @@ interface TaskStore {
   setProjectStatus: (
     projectId: string,
     status: Exclude<ProjectStatus, "completed">,
-  ) => ProjectActionResult;
+    activeSlotId?: string,
+  ) => FocusActionResult;
+  parkAndActivateProject: (
+    projectId: string,
+    slotId: string,
+    projectIdsToPark: string[],
+  ) => FocusActionResult;
+  saveActiveSlot: (slot: ActiveSlot) => FocusActionResult;
+  startWeeklyReview: (date: string) => FocusActionResult;
+  completeWeeklyReview: (reviewId: string, notes?: string) => FocusActionResult;
   completeProject: (projectId: string) => ProjectActionResult;
 }
 
@@ -195,6 +220,14 @@ function recurrenceData(state: TaskStore) {
   };
 }
 
+function focusData(state: TaskStore) {
+  return {
+    projects: state.projects,
+    activeSlots: state.activeSlots,
+    weeklyReviews: state.weeklyReviews,
+  };
+}
+
 export const useTaskStore = create<TaskStore>()(
   persist(
     (set, get) => ({
@@ -207,6 +240,8 @@ export const useTaskStore = create<TaskStore>()(
       recurrenceOverrides: [],
       routines: [],
       routineStates: [],
+      activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
+      weeklyReviews: [],
       hasHydrated: false,
       setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       captureTask: ({ title, notes }) => {
@@ -441,22 +476,15 @@ export const useTaskStore = create<TaskStore>()(
         }
         return transition;
       },
-      createProject: ({ title, desiredOutcome, status = "active" }) => {
-        const cleanTitle = title.trim();
-        const cleanOutcome = desiredOutcome.trim();
-        if (!cleanTitle || !cleanOutcome) return null;
-
-        const timestamp = new Date().toISOString();
-        const project: Project = {
-          id: createId("project"),
-          title: cleanTitle,
-          desiredOutcome: cleanOutcome,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-          status,
-        };
-        set((state) => ({ projects: [project, ...state.projects] }));
-        return project;
+      createProject: (input) => {
+        const transition = createProjectWithFocus(
+          focusData(get()),
+          input,
+          createId("project"),
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ projects: transition.projects });
+        return transition;
       },
       addProjectSteps: (projectId, parentStepId, titles) => {
         const cleanTitles = titles.map((title) => title.trim()).filter(Boolean);
@@ -513,14 +541,51 @@ export const useTaskStore = create<TaskStore>()(
         }
         return transition;
       },
-      setProjectStatus: (projectId, status) => {
-        const transition = updateProjectStatus(
-          projectData(get()),
+      setProjectStatus: (projectId, status, activeSlotId) => {
+        const transition = setProjectFocus(
+          focusData(get()),
           projectId,
           status,
+          activeSlotId,
           new Date().toISOString(),
         );
         if (transition.ok) set({ projects: transition.projects });
+        return transition;
+      },
+      parkAndActivateProject: (projectId, slotId, projectIdsToPark) => {
+        const transition = parkAndActivateProject(
+          focusData(get()),
+          projectId,
+          slotId,
+          projectIdsToPark,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ projects: transition.projects });
+        return transition;
+      },
+      saveActiveSlot: (slot) => {
+        const transition = saveActiveSlot(focusData(get()), slot);
+        if (transition.ok) set({ activeSlots: transition.activeSlots });
+        return transition;
+      },
+      startWeeklyReview: (date) => {
+        const transition = startWeeklyReview(
+          focusData(get()),
+          createId("weekly-review"),
+          date,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ weeklyReviews: transition.weeklyReviews });
+        return transition;
+      },
+      completeWeeklyReview: (reviewId, notes) => {
+        const transition = completeWeeklyReview(
+          focusData(get()),
+          reviewId,
+          notes,
+          new Date().toISOString(),
+        );
+        if (transition.ok) set({ weeklyReviews: transition.weeklyReviews });
         return transition;
       },
       completeProject: (projectId) => {
@@ -542,7 +607,7 @@ export const useTaskStore = create<TaskStore>()(
     {
       name: "parse-tasks-v1",
       storage: createJSONStorage(() => AsyncStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState) => migratePersistedState(persistedState),
       partialize: ({
         tasks,
@@ -554,6 +619,8 @@ export const useTaskStore = create<TaskStore>()(
         recurrenceOverrides,
         routines,
         routineStates,
+        activeSlots,
+        weeklyReviews,
       }) => ({
         tasks,
         projects,
@@ -564,6 +631,8 @@ export const useTaskStore = create<TaskStore>()(
         recurrenceOverrides,
         routines,
         routineStates,
+        activeSlots,
+        weeklyReviews,
       }),
       onRehydrateStorage: () => (state) => {
         state?.setHasHydrated(true);

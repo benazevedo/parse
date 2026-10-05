@@ -323,7 +323,14 @@ export function updateProjectStatus(
   return changed({
     ...state,
     projects: state.projects.map((item) =>
-      item.id === projectId ? { ...item, status, updatedAt } : item,
+      item.id === projectId
+        ? {
+            ...item,
+            status,
+            activeSlotId: status === "active" ? item.activeSlotId : undefined,
+            updatedAt,
+          }
+        : item,
     ),
   });
 }
@@ -373,6 +380,7 @@ export function completeProjectOutcome(
             completedAt,
             updatedAt: completedAt,
             nextActionId: undefined,
+            activeSlotId: undefined,
           }
         : item,
     ),

@@ -26,9 +26,7 @@ export default function ProjectDetailScreen() {
   const project = useTaskStore((state) =>
     state.projects.find((item) => item.id === id),
   );
-  const steps = useTaskStore((state) =>
-    state.projectSteps.filter((step) => step.projectId === id),
-  );
+  const projectSteps = useTaskStore((state) => state.projectSteps);
   const tasks = useTaskStore((state) => state.tasks);
   const setProjectNextAction = useTaskStore(
     (state) => state.setProjectNextAction,
@@ -40,6 +38,10 @@ export default function ProjectDetailScreen() {
     (state) => state.completeProjectStep,
   );
   const setProjectStatus = useTaskStore((state) => state.setProjectStatus);
+  const parkAndActivateProject = useTaskStore(
+    (state) => state.parkAndActivateProject,
+  );
+  const activeSlots = useTaskStore((state) => state.activeSlots);
   const completeProject = useTaskStore((state) => state.completeProject);
 
   if (!project) {
@@ -54,6 +56,8 @@ export default function ProjectDetailScreen() {
       </Screen>
     );
   }
+
+  const steps = projectSteps.filter((step) => step.projectId === id);
 
   const nextAction = steps.find((step) => step.id === project.nextActionId);
   const linkedTask = nextAction
@@ -87,6 +91,42 @@ export default function ProjectDetailScreen() {
         {
           text: "Complete Project",
           onPress: () => showResult(completeProject(project.id)),
+        },
+      ],
+    );
+  };
+
+  const activateInSlot = (activeSlotId?: string) => {
+    const result = setProjectStatus(project.id, "active", activeSlotId);
+    if (result.ok) return;
+    const conflicts = (result.conflictingProjectIds ?? []).flatMap(
+      (conflictId) => {
+        const conflict = useTaskStore
+          .getState()
+          .projects.find((item) => item.id === conflictId);
+        return conflict ? [conflict] : [];
+      },
+    );
+    if (!activeSlotId || conflicts.length === 0) {
+      Alert.alert("Not changed", result.message);
+      return;
+    }
+    const slot = activeSlots.find((item) => item.id === activeSlotId);
+    Alert.alert(
+      `${slot?.name ?? "This slot"} is full`,
+      `${conflicts.map((item) => item.title).join(", ")} is active here. Parking preserves its plan and next action.`,
+      [
+        { text: `Keep ${conflicts[0].title}`, style: "cancel" },
+        {
+          text: `Park & activate`,
+          onPress: () =>
+            showResult(
+              parkAndActivateProject(
+                project.id,
+                activeSlotId,
+                conflicts.map((item) => item.id),
+              ),
+            ),
         },
       ],
     );
@@ -247,18 +287,46 @@ export default function ProjectDetailScreen() {
 
       <View style={styles.statusSection}>
         <Text style={styles.sectionLabel}>PROJECT STATUS</Text>
+        {canEdit ? (
+          <>
+            <Text style={styles.slotSupport}>
+              {project.status === "active"
+                ? "Choose a focus slot, or leave foundational work unslotted."
+                : "Reactivate into an open focus slot."}
+            </Text>
+            <View style={styles.statusActions}>
+              <Pressable
+                onPress={() => activateInSlot(undefined)}
+                style={[
+                  styles.statusButton,
+                  project.status === "active" &&
+                    !project.activeSlotId &&
+                    styles.statusButtonSelected,
+                ]}
+              >
+                <Text style={styles.statusButtonText}>No slot</Text>
+              </Pressable>
+              {activeSlots
+                .filter((slot) => slot.enabled)
+                .sort((a, b) => a.order - b.order)
+                .map((slot) => (
+                  <Pressable
+                    key={slot.id}
+                    onPress={() => activateInSlot(slot.id)}
+                    style={[
+                      styles.statusButton,
+                      project.status === "active" &&
+                        project.activeSlotId === slot.id &&
+                        styles.statusButtonSelected,
+                    ]}
+                  >
+                    <Text style={styles.statusButtonText}>{slot.name}</Text>
+                  </Pressable>
+                ))}
+            </View>
+          </>
+        ) : null}
         <View style={styles.statusActions}>
-          {project.status !== "active" && project.status !== "completed" ? (
-            <Pressable
-              onPress={() => showResult(setProjectStatus(project.id, "active"))}
-              style={({ pressed }) => [
-                styles.statusButton,
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={styles.statusButtonText}>Reactivate</Text>
-            </Pressable>
-          ) : null}
           {project.status === "active" ? (
             <>
               <Pressable
@@ -305,6 +373,9 @@ export default function ProjectDetailScreen() {
           <Text style={styles.somedayCopy}>
             You do not owe this idea anything today.
           </Text>
+        ) : null}
+        {project.status === "parked" ? (
+          <Text style={styles.somedayCopy}>Not now, not never.</Text>
         ) : null}
       </View>
     </Screen>
@@ -533,6 +604,12 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginTop: spacing.md,
   },
+  slotSupport: {
+    color: colors.muted,
+    fontSize: typography.size.caption,
+    lineHeight: 18,
+    marginTop: spacing.sm,
+  },
   statusButton: {
     backgroundColor: colors.surfaceMuted,
     borderRadius: radii.pill,
@@ -544,6 +621,11 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: typography.size.caption,
     fontWeight: typography.weight.semibold,
+  },
+  statusButtonSelected: {
+    backgroundColor: colors.accentSoft,
+    borderColor: colors.accent,
+    borderWidth: 1,
   },
   completeProjectText: { color: colors.success },
   somedayCopy: {

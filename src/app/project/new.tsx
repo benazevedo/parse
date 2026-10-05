@@ -2,6 +2,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -25,17 +26,30 @@ const statuses: Exclude<ProjectStatus, "completed">[] = [
 
 export default function CreateProjectScreen() {
   const createProject = useTaskStore((state) => state.createProject);
+  const activeSlots = useTaskStore((state) => state.activeSlots);
   const [title, setTitle] = useState("");
   const [desiredOutcome, setDesiredOutcome] = useState("");
   const [status, setStatus] =
     useState<Exclude<ProjectStatus, "completed">>("active");
+  const [activeSlotId, setActiveSlotId] = useState<string | undefined>();
   const canSave = Boolean(title.trim() && desiredOutcome.trim());
 
   const save = () => {
     if (!canSave) return;
-    const project = createProject({ title, desiredOutcome, status });
-    if (!project) return;
-    router.replace({ pathname: "/project/[id]", params: { id: project.id } });
+    const result = createProject({
+      title,
+      desiredOutcome,
+      status,
+      activeSlotId: status === "active" ? activeSlotId : undefined,
+    });
+    if (!result.ok || !result.projectId) {
+      Alert.alert("Could not create project", result.message);
+      return;
+    }
+    router.replace({
+      pathname: "/project/[id]",
+      params: { id: result.projectId },
+    });
   };
 
   return (
@@ -62,6 +76,7 @@ export default function CreateProjectScreen() {
           <View style={styles.icon}>
             <Ionicons color={colors.accent} name="layers-outline" size={24} />
           </View>
+
           <Text style={styles.eyebrow}>NAME THE OUTCOME</Text>
           <Text style={styles.prompt}>
             What will be meaningfully different when this is done?
@@ -111,6 +126,52 @@ export default function CreateProjectScreen() {
               );
             })}
           </View>
+
+          {status === "active" ? (
+            <>
+              <Text style={styles.label}>Focus slot (optional)</Text>
+              <Text style={styles.support}>
+                Foundational work can stay active without a slot.
+              </Text>
+              <View style={styles.slotList}>
+                <Pressable
+                  onPress={() => setActiveSlotId(undefined)}
+                  style={[styles.slot, !activeSlotId && styles.statusSelected]}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      !activeSlotId && styles.statusTextSelected,
+                    ]}
+                  >
+                    No slot
+                  </Text>
+                </Pressable>
+                {activeSlots
+                  .filter((slot) => slot.enabled)
+                  .sort((a, b) => a.order - b.order)
+                  .map((slot) => {
+                    const selected = activeSlotId === slot.id;
+                    return (
+                      <Pressable
+                        key={slot.id}
+                        onPress={() => setActiveSlotId(slot.id)}
+                        style={[styles.slot, selected && styles.statusSelected]}
+                      >
+                        <Text
+                          style={[
+                            styles.statusText,
+                            selected && styles.statusTextSelected,
+                          ]}
+                        >
+                          {slot.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+              </View>
+            </>
+          ) : null}
 
           <Pressable
             accessibilityState={{ disabled: !canSave }}
@@ -201,6 +262,22 @@ const styles = StyleSheet.create({
   },
   outcomeInput: { minHeight: 112 },
   statuses: { flexDirection: "row", gap: spacing.sm },
+  support: {
+    color: colors.muted,
+    fontSize: typography.size.caption,
+    marginBottom: spacing.sm,
+  },
+  slotList: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  slot: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderColor: "transparent",
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: spacing.lg,
+  },
   status: {
     alignItems: "center",
     backgroundColor: colors.surfaceMuted,

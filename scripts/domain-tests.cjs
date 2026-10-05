@@ -17,6 +17,7 @@ require.extensions[".ts"] = (module, filename) => {
 
 const {
   addChildSteps,
+  completeProjectOutcome,
   completeStepAndLinkedTask,
   completeTaskAndLinkedStep,
   designateNextAction,
@@ -61,6 +62,17 @@ const {
   skipOccurrenceTransition,
   syncRoutineTaskCompletion,
 } = require("../src/store/recurrence-transitions.ts");
+const {
+  completeWeeklyReview,
+  createProjectWithFocus,
+  getProjectActivity,
+  getSlotOccupants,
+  parkAndActivateProject,
+  saveActiveSlot,
+  setProjectFocus,
+  startWeeklyReview,
+} = require("../src/store/focus-transitions.ts");
+const { DEFAULT_ACTIVE_SLOTS } = require("../src/types/focus.ts");
 
 const timestamp = "2026-10-03T12:00:00.000Z";
 const completedAt = "2026-10-03T13:00:00.000Z";
@@ -1141,6 +1153,364 @@ assert.equal(
   "future routine occurrences still derive after restart",
 );
 
+// Milestone 005: active slots, explicit capacity resolution, and review history.
+const m5Migrated = migratePersistedState({
+  tasks: standaloneTasks,
+  projects: [],
+  projectSteps: [],
+});
+assert.deepEqual(
+  m5Migrated.activeSlots.map((slot) => [slot.name, slot.maxActiveProjects]),
+  [
+    ["Build", 1],
+    ["Learn", 1],
+    ["Personal", 1],
+  ],
+  "older installs receive the three default active slots",
+);
+assert.deepEqual(m5Migrated.weeklyReviews, []);
+
+let focusState = {
+  projects: [],
+  activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
+  weeklyReviews: [],
+};
+let focusResult = createProjectWithFocus(
+  focusState,
+  {
+    title: "PARSE",
+    desiredOutcome: "A calm personal operating system ships.",
+    status: "active",
+    activeSlotId: "slot-build",
+  },
+  "project-parse",
+  timestamp,
+);
+assert.equal(focusResult.ok, true);
+focusState = focusResult;
+assert.equal(focusState.projects[0].activeSlotId, "slot-build");
+
+focusResult = createProjectWithFocus(
+  focusState,
+  {
+    title: "Portfolio",
+    desiredOutcome: "Portfolio is ready to share.",
+    status: "active",
+    activeSlotId: "slot-build",
+  },
+  "project-portfolio",
+  timestamp,
+);
+assert.equal(focusResult.ok, false, "a full Build slot rejects activation");
+assert.deepEqual(focusResult.conflictingProjectIds, ["project-parse"]);
+
+focusResult = createProjectWithFocus(
+  focusState,
+  {
+    title: "Portfolio",
+    desiredOutcome: "Portfolio is ready to share.",
+    status: "parked",
+  },
+  "project-portfolio",
+  timestamp,
+);
+assert.equal(focusResult.ok, true);
+focusState = focusResult;
+focusState = {
+  ...focusState,
+  projects: focusState.projects.map((item) =>
+    item.id === "project-parse"
+      ? { ...item, nextActionId: "parse-next", domain: "work" }
+      : item,
+  ),
+};
+
+focusResult = parkAndActivateProject(
+  focusState,
+  "project-portfolio",
+  "slot-build",
+  ["project-parse"],
+  completedAt,
+);
+assert.equal(focusResult.ok, true, "explicit switch is atomic");
+focusState = focusResult;
+assert.equal(
+  focusState.projects.find((item) => item.id === "project-parse").status,
+  "parked",
+);
+assert.equal(
+  focusState.projects.find((item) => item.id === "project-parse").nextActionId,
+  "parse-next",
+  "parking preserves the next action",
+);
+assert.equal(
+  focusState.projects.find((item) => item.id === "project-parse").domain,
+  "work",
+  "parking preserves project context",
+);
+
+const beforeKeep = JSON.stringify(focusState.projects);
+focusResult = setProjectFocus(
+  focusState,
+  "project-parse",
+  "active",
+  "slot-build",
+  completedAt,
+);
+assert.equal(
+  focusResult.ok,
+  false,
+  "reactivating into full Build explains conflict",
+);
+assert.equal(
+  JSON.stringify(focusResult.projects),
+  beforeKeep,
+  "keeping the current occupant leaves state unchanged",
+);
+
+focusResult = parkAndActivateProject(
+  focusState,
+  "project-parse",
+  "slot-build",
+  ["project-portfolio"],
+  completedAt,
+);
+assert.equal(focusResult.ok, true);
+focusState = focusResult;
+
+for (const input of [
+  {
+    title: "MSAI",
+    desiredOutcome: "Current course work is complete.",
+    activeSlotId: "slot-learn",
+  },
+  {
+    title: "Nursery",
+    desiredOutcome: "The nursery is ready.",
+    activeSlotId: "slot-personal",
+  },
+]) {
+  focusResult = createProjectWithFocus(
+    focusState,
+    { ...input, status: "active" },
+    `project-${input.title.toLowerCase()}`,
+    completedAt,
+  );
+  assert.equal(focusResult.ok, true);
+  focusState = focusResult;
+}
+assert.equal(
+  focusState.projects.filter(
+    (item) => item.status === "active" && item.activeSlotId,
+  ).length,
+  3,
+);
+
+// Non-active statuses release capacity, and a project has only one slot field.
+let inactiveCapacityState = {
+  projects: [
+    {
+      ...project,
+      id: "parked-capacity",
+      status: "parked",
+      activeSlotId: "slot-build",
+    },
+    {
+      ...project,
+      id: "someday-capacity",
+      status: "someday",
+      activeSlotId: "slot-build",
+    },
+    {
+      ...project,
+      id: "completed-capacity",
+      status: "completed",
+      activeSlotId: "slot-build",
+    },
+    {
+      ...project,
+      id: "moving-project",
+      status: "parked",
+      activeSlotId: undefined,
+    },
+  ],
+  activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
+  weeklyReviews: [],
+};
+focusResult = setProjectFocus(
+  inactiveCapacityState,
+  "moving-project",
+  "active",
+  "slot-build",
+  completedAt,
+);
+assert.equal(
+  focusResult.ok,
+  true,
+  "parked, someday, and completed projects do not consume capacity",
+);
+inactiveCapacityState = focusResult;
+focusResult = setProjectFocus(
+  inactiveCapacityState,
+  "moving-project",
+  "active",
+  "slot-learn",
+  completedAt,
+);
+assert.equal(focusResult.ok, true);
+assert.equal(getSlotOccupants(focusResult.projects, "slot-build").length, 0);
+assert.equal(
+  getSlotOccupants(focusResult.projects, "slot-learn").length,
+  1,
+  "moving a project replaces its slot instead of duplicating it",
+);
+
+const completedSlotProject = completeProjectOutcome(
+  {
+    tasks: [],
+    projects: [
+      {
+        ...project,
+        id: "complete-slot-project",
+        activeSlotId: "slot-build",
+      },
+    ],
+    projectSteps: [],
+  },
+  "complete-slot-project",
+  completedAt,
+);
+assert.equal(completedSlotProject.ok, true);
+assert.equal(
+  completedSlotProject.projects[0].activeSlotId,
+  undefined,
+  "completing a project releases its slot",
+);
+
+let configurableCapacityState = {
+  projects: [
+    { ...project, id: "capacity-one", activeSlotId: "slot-build" },
+    { ...project, id: "capacity-two", activeSlotId: "slot-build" },
+  ],
+  activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) =>
+    slot.id === "slot-build" ? { ...slot, maxActiveProjects: 2 } : { ...slot },
+  ),
+  weeklyReviews: [],
+};
+focusResult = saveActiveSlot(configurableCapacityState, {
+  ...configurableCapacityState.activeSlots.find(
+    (slot) => slot.id === "slot-build",
+  ),
+  maxActiveProjects: 1,
+});
+assert.equal(
+  focusResult.ok,
+  false,
+  "capacity cannot be reduced below current usage",
+);
+
+let disabledSlotState = {
+  projects: [{ ...project, id: "disabled-target", status: "parked" }],
+  activeSlots: DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot })),
+  weeklyReviews: [],
+};
+focusResult = saveActiveSlot(disabledSlotState, {
+  ...disabledSlotState.activeSlots.find((slot) => slot.id === "slot-build"),
+  enabled: false,
+});
+assert.equal(focusResult.ok, true);
+disabledSlotState = focusResult;
+focusResult = setProjectFocus(
+  disabledSlotState,
+  "disabled-target",
+  "active",
+  "slot-build",
+  completedAt,
+);
+assert.equal(
+  focusResult.ok,
+  false,
+  "disabled slots reject new active assignments",
+);
+
+focusResult = saveActiveSlot(focusState, {
+  ...focusState.activeSlots.find((slot) => slot.id === "slot-build"),
+  maxActiveProjects: 0,
+});
+assert.equal(
+  focusResult.ok,
+  false,
+  "enabled slot capacity cannot be below one",
+);
+focusResult = saveActiveSlot(focusState, {
+  ...focusState.activeSlots.find((slot) => slot.id === "slot-build"),
+  enabled: false,
+});
+assert.equal(focusResult.ok, false, "a used slot cannot be disabled silently");
+
+assert.equal(
+  getProjectActivity(
+    focusState.projects.find((item) => item.id === "project-parse"),
+    "2026-09-28",
+  ),
+  "moved",
+  "project updatedAt supplies restrained review recency",
+);
+
+focusResult = startWeeklyReview(
+  focusState,
+  "review-2026-09-28",
+  "2026-10-03",
+  timestamp,
+);
+assert.equal(focusResult.ok, true);
+focusState = focusResult;
+assert.equal(focusState.weeklyReviews.length, 1);
+focusResult = startWeeklyReview(
+  focusState,
+  "duplicate-review",
+  "2026-10-04",
+  completedAt,
+);
+assert.equal(focusResult.reviewId, "review-2026-09-28");
+assert.equal(focusResult.weeklyReviews.length, 1, "one review record per week");
+
+focusResult = completeWeeklyReview(
+  focusState,
+  "review-2026-09-28",
+  "Keep the week small.",
+  completedAt,
+);
+assert.equal(focusResult.ok, true);
+focusState = focusResult;
+const completedReview = focusState.weeklyReviews[0];
+assert.equal(completedReview.completedAt, completedAt);
+assert.deepEqual(
+  new Set(completedReview.selectedFocusProjectIds),
+  new Set(["project-parse", "project-msai", "project-nursery"]),
+  "completion snapshots the final focus set",
+);
+
+const restartedFocus = migratePersistedState(
+  JSON.parse(
+    JSON.stringify({
+      ...m5Migrated,
+      projects: focusState.projects,
+      activeSlots: focusState.activeSlots,
+      weeklyReviews: focusState.weeklyReviews,
+    }),
+  ),
+);
+assert.equal(restartedFocus.activeSlots.length, 3);
+assert.equal(restartedFocus.weeklyReviews[0].completedAt, completedAt);
+assert.equal(
+  restartedFocus.projects.filter(
+    (item) => item.status === "active" && item.activeSlotId === "slot-build",
+  ).length,
+  1,
+  "restart preserves slot capacity state",
+);
+
 console.log(
-  "PASS project/task invariants, M3 planning, recurring commitments, overrides, routines, local-date recurrence, and v1-v3 persistence migration",
+  "PASS M1-M5 project/task, planning, recurrence, active-slot, weekly-review, local-date, and persistence invariants",
 );

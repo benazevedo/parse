@@ -62,8 +62,18 @@ export default function WeekScreen() {
   const overrides = useTaskStore((state) => state.recurrenceOverrides);
   const routines = useTaskStore((state) => state.routines);
   const routineStates = useTaskStore((state) => state.routineStates);
+  const weeklyReviews = useTaskStore((state) => state.weeklyReviews);
   const dates = useMemo(() => getMondayWeek(anchorDate), [anchorDate]);
   const today = getLocalDateKey();
+  const currentWeekStart = getMondayWeek(today)[0];
+  const currentReview = weeklyReviews.find(
+    (review) => review.weekStartDate === currentWeekStart,
+  );
+  const reviewStatus = currentReview?.completedAt
+    ? "Completed"
+    : currentReview
+      ? "In progress"
+      : "Not reviewed";
 
   return (
     <Screen>
@@ -86,6 +96,20 @@ export default function WeekScreen() {
         Commitments, scheduled work, and routines—without turning the week into
         a dense calendar.
       </Text>
+
+      <Pressable
+        onPress={() => router.push("/review" as Href)}
+        style={({ pressed }) => [styles.reviewCard, pressed && styles.pressed]}
+      >
+        <View style={styles.reviewIcon}>
+          <Ionicons color={colors.accent} name="refresh-outline" size={19} />
+        </View>
+        <View style={styles.reviewCopy}>
+          <Text style={styles.reviewTitle}>Weekly Review</Text>
+          <Text style={styles.reviewStatus}>{reviewStatus}</Text>
+        </View>
+        <Ionicons color={colors.accent} name="chevron-forward" size={18} />
+      </Pressable>
 
       <View style={styles.weekNav}>
         <Pressable
@@ -314,6 +338,34 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginTop: spacing.sm,
   },
+  reviewCard: {
+    alignItems: "center",
+    backgroundColor: colors.accentSoft,
+    borderRadius: radii.lg,
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.xl,
+    padding: spacing.lg,
+  },
+  reviewIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radii.pill,
+    height: 38,
+    justifyContent: "center",
+    width: 38,
+  },
+  reviewCopy: { flex: 1 },
+  reviewTitle: {
+    color: colors.ink,
+    fontSize: typography.size.body,
+    fontWeight: typography.weight.semibold,
+  },
+  reviewStatus: {
+    color: colors.muted,
+    fontSize: typography.size.caption,
+    marginTop: 2,
+  },
   weekNav: {
     alignItems: "center",
     flexDirection: "row",
@@ -401,4 +453,5 @@ const styles = StyleSheet.create({
     fontSize: typography.size.body,
     paddingVertical: spacing.md,
   },
+  pressed: { opacity: 0.65 },
 });

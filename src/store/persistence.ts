@@ -1,6 +1,11 @@
 import type { Project, ProjectStep } from "../types/project";
 import type { DayPlan } from "../types/planning";
 import type { Task } from "../types/task";
+import {
+  DEFAULT_ACTIVE_SLOTS,
+  type ActiveSlot,
+  type WeeklyReview,
+} from "../types/focus";
 import type {
   RecurrenceRule,
   RecurringCommitment,
@@ -19,6 +24,12 @@ export interface PersistedAppState {
   recurrenceOverrides: RecurringCommitmentOverride[];
   routines: Routine[];
   routineStates: RoutineOccurrenceState[];
+  activeSlots: ActiveSlot[];
+  weeklyReviews: WeeklyReview[];
+}
+
+function defaultActiveSlots(): ActiveSlot[] {
+  return DEFAULT_ACTIVE_SLOTS.map((slot) => ({ ...slot }));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -39,6 +50,8 @@ export function migratePersistedState(
       recurrenceOverrides: [],
       routines: [],
       routineStates: [],
+      activeSlots: defaultActiveSlots(),
+      weeklyReviews: [],
     };
   }
 
@@ -80,6 +93,14 @@ export function migratePersistedState(
       : [],
     routineStates: Array.isArray(persistedState.routineStates)
       ? (persistedState.routineStates as RoutineOccurrenceState[])
+      : [],
+    activeSlots:
+      Array.isArray(persistedState.activeSlots) &&
+      persistedState.activeSlots.length > 0
+        ? (persistedState.activeSlots as ActiveSlot[])
+        : defaultActiveSlots(),
+    weeklyReviews: Array.isArray(persistedState.weeklyReviews)
+      ? (persistedState.weeklyReviews as WeeklyReview[])
       : [],
   };
 }
